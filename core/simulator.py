@@ -80,7 +80,7 @@ class Simulator:
         self.vpu_loadtimes = {}
         self.fpga_loadtimes = {}
 
-        self.model_variants = {}
+        self.model_variants = {} # key是isi_name模型家族名 value是同一个isi_name内的所有模型名称列表
         self.model_variant_runtimes = {}
         self.model_variant_loadtimes = {}
         self.model_variant_accuracies = {}
@@ -160,7 +160,8 @@ class Simulator:
             self.set_model_variants(isi_name, model_variant_list)
 
             self.initialize_model_variant_loadtimes(isi_name)
-
+            
+            #增加executor，一个模型家族一个executor
             self.add_executor(isi_name, self.job_sched_algo, runtimes={},
                               model_variant_runtimes={}, model_variant_loadtimes={},
                               max_acc_per_type=self.max_acc_per_type, simulator=self)
@@ -175,7 +176,7 @@ class Simulator:
                 readfile = open(os.path.join(trace_path, file), mode='r')
                 self.trace_files[isi_name] = readfile
                 self.add_requests_from_trace_pointer(
-                    isi_name, readfile, read_until=10000)
+                    isi_name, readfile, read_until=10000)   #read_until是一个时间点，我们只考虑在这个时间点之前的请求
             else:
                 start = time.time()
                 self.add_requests_from_trace(
@@ -192,6 +193,7 @@ class Simulator:
         self.loadtimes = {1: self.cpu_loadtimes, 2: self.gpu_loadtimes,
                           3: self.vpu_loadtimes, 4: self.fpga_loadtimes}
 
+        #将加载的信息给予executor
         self.set_executor_runtimes()
         self.set_executor_loadtimes()
         self.log.info(f'Model variant accuracies: {self.model_variant_accuracies}')
@@ -262,7 +264,7 @@ class Simulator:
             self.executors[isi_name].set_loadtimes(self.loadtimes)
 
     
-    def read_variants_from_file(self, filename):
+    def read_variants_from_file(self, filename): #读取一个模型家族里的所有模型，返回模型名称，将accuracy写入self.model_variant_accuracies
         model_variants = []
         isi_name = filename.split('/')[-1]
         print(f'filename: {filename}')
@@ -450,7 +452,7 @@ class Simulator:
             batch_size_counters[batch_size] = 0
         return batch_size_counters
 
-    def initialize_model_variant_runtimes(self):
+    def initialize_model_variant_runtimes(self): #将不同model variants和batch size组合的推理latency加载到model_variant_runtimes中
         profiled = self.import_profiled_data()
         model_variants = profiled['model_variant']
         acc_types = profiled['acc_type']

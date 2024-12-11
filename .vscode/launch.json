@@ -11,8 +11,8 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd":"/home/legend/Proteus",
-            "pythonPath":"/home/legend/miniconda3/envs/proteus/bin/python3.9",
-            "args":""
+            "python": "/home/legend/miniconda3/envs/proteus/bin/python3.9",
+            "args":["--config_file","configs/zipf_exponential/proteus.json"]
         }
     ]
 }
