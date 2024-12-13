@@ -143,6 +143,7 @@ class Simulator:
             
         self.log.info(f'Reading trace files from: {trace_path}')
         trace_files = sorted(os.listdir(trace_path))
+        #生成executor并加载trace中的请求
         for file in trace_files:
             filename = file.split('/')[-1]
             if len(filename.split('.')) == 1:
@@ -376,7 +377,7 @@ class Simulator:
             self.insert_event(start_time, EventType.START_REQUEST, isi_name, runtime=None,
                               deadline=deadline, qos_level=qos_level, accuracy=accuracy)
             self.requests_added += 1
-            if start_time >= read_until:
+            if start_time >= read_until: #大于read_until就不处理了
                 break
 
             # We want to keep track of where we stopped adding requests for

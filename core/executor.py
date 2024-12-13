@@ -26,7 +26,7 @@ class Executor:
         self.isi = isi
         self.n_qos_levels = n_qos_levels
         self.predictors = {}
-        self.num_predictor_types = np.zeros(4 * n_qos_levels)
+        self.num_predictor_types = np.zeros(4 * n_qos_levels)  #是这个executor使用的predictor数量，有CPU/GPU/VPU等等类型的predictor，这里是四种类型
         self.max_acc_per_type = max_acc_per_type
         self.assigned_requests = {}
         self.iterator = itertools.cycle(self.predictors)
