@@ -56,7 +56,7 @@ class Simulator:
         self.max_acc_per_type = max_acc_per_type
 
         if fixed_seed != 0:
-            random.seed(fixed_seed)
+            random.seed(fixed_seed)   #设置随机种子
             np.random.seed(fixed_seed)
 
         self.job_sched_algo = job_sched_algo
