@@ -119,18 +119,18 @@ class SchedulingEnv(gym.Env):
         completed_requests = self.simulator.completed_requests
         qos_stats = self.simulator.get_qos_stats()
 
-        self.state[-1, 0:4] = available_predictors
-        self.state[:-1, -1] = failed_requests_arr
-        self.state[:-1, -2] = total_requests_arr
+        self.state[-1, 0:4] = available_predictors   #每行的0~3是不同请求类型使用的predictor
+        self.state[:-1, -1] = failed_requests_arr    #每行的最后一列是该请求类型失败请求的数量
+        self.state[:-1, -2] = total_requests_arr     #每行的倒数第二列是该请求类型的所有请求数量
         qos_start_idx = self.n_accelerators*self.n_qos_levels*2
         qos_end_idx = qos_start_idx + self.n_qos_levels*2
-        self.state[:-1, qos_start_idx:qos_end_idx] = qos_stats        
+        self.state[:-1, qos_start_idx:qos_end_idx] = qos_stats     #每行的倒数三四列是qos_stats部分   
 
         self.actions_taken += 1
         if self.actions_taken == self.action_group_size:
             self.clock += self.allocation_window
             self.simulator.reset_request_count()
-            self.simulator.simulate_until(self.clock)
+            self.simulator.simulate_until(self.clock)  #模拟真实系统的调度推理，直到self.clock为止
             self.actions_taken = 0
 
         observation = self.state

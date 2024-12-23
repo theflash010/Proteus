@@ -143,7 +143,7 @@ class Simulator:
             
         self.log.info(f'Reading trace files from: {trace_path}')
         trace_files = sorted(os.listdir(trace_path))
-        #生成executor并加载trace中的请求
+        #获取每种任务的可用模型，生成executor并加载trace中的请求
         for file in trace_files:
             filename = file.split('/')[-1]
             if len(filename.split('.')) == 1:
@@ -154,6 +154,7 @@ class Simulator:
                 continue
             self.log.info('Filename: ' + file)
 
+            #加载允许使用的模型变种(不是所有被profiling的模型变种都允许被使用的)
             variant_list_filename = os.path.join(allowed_variants_path, isi_name)
             self.log.info('Variant list filename:' + variant_list_filename)
 
@@ -185,7 +186,8 @@ class Simulator:
                 end = time.time()
                 self.log.debug(
                     'Time to add trace file: {} seconds'.format(end - start))
-        
+                
+        #将不同model variants和batch size组合的推理latency加载到model_variant_runtimes中
         self.initialize_model_variant_runtimes()
 
         self.runtimes = {1: self.cpu_runtimes, 2: self.gpu_runtimes,
@@ -265,7 +267,7 @@ class Simulator:
             self.executors[isi_name].set_loadtimes(self.loadtimes)
 
     
-    def read_variants_from_file(self, filename): #读取一个模型家族里的所有模型，返回模型名称，将accuracy写入self.model_variant_accuracies
+    def read_variants_from_file(self, filename): #读取一个模型家族里可使用的模型变种，返回模型名称，将accuracy写入self.model_variant_accuracies
         model_variants = []
         isi_name = filename.split('/')[-1]
         print(f'filename: {filename}')
@@ -290,17 +292,22 @@ class Simulator:
     def add_moving_demand(self, demand):
         ''' Adds latest demand to moving window and updates EWMA demand
         '''
+        #demand_moving_window是过去的demand窗口，用于预测后面到来的demand的大小
+        #这里将新的demand加入窗口中
         self.demand_moving_window = np.hstack((self.demand_moving_window, demand))
 
+        #如果加入新窗口后窗口大小大于指定窗口大小，那就舍弃第一块窗口
         while self.demand_moving_window.shape[1] > EWMA_WINDOW:
             self.demand_moving_window = self.demand_moving_window[:, 1:]
         
         self.log.debug(f'demand_moving_window: {self.demand_moving_window}')
+        #预测不同executor下一波的demand
         for i in range(len(self.executors)):
             df = pd.DataFrame({'demand': self.demand_moving_window[i, :]})
-            ewma = df.ewm(com=self.ewma_decay).mean()
-            ewma_value = ewma['demand'].to_list()[-1]
+            ewma = df.ewm(com=self.ewma_decay).mean() #.mean()之前，ewm的结果并不是dataframe,是一个特殊的类型，可以说.ewm和.mean是一个整体，两个操作都做完才是一个ewm预测
+            ewma_value = ewma['demand'].to_list()[-1] #挑选最新的预测结果，并记录下来
             self.ewma_demand[i] = ewma_value
+
         return
 
 
@@ -538,9 +545,9 @@ class Simulator:
                     for batch_size in self.allowed_batch_sizes:
                         if (isi_name, model_variant, batch_size) not in acc_latencies:
                             acc_latencies[(isi_name, model_variant, batch_size)] = np.inf
-                        latency = acc_latencies[(isi_name, model_variant, batch_size)]
+                        latency = acc_latencies[(isi_name, model_variant, batch_size)] #获取由加速器类型和模型变种以及batch size共同决定的latency
 
-                        if batch_size > max_batch_size and latency < self.slo_dict[isi_name] / 2:
+                        if batch_size > max_batch_size and latency < self.slo_dict[isi_name] / 2:  #latency满足slo的一半才可以增加max batch size
                             max_batch_size = batch_size
 
                     max_batch_size_dict[(acc_type, model_variant)] = max_batch_size
@@ -667,9 +674,9 @@ class Simulator:
         If -1 is specified, run till the end.
         '''
         while len(self.event_queue) > 0 and (self.event_queue[0].start_time <= until or until == -1):
-            current_event = self.event_queue.pop(0)
+            current_event = self.event_queue.pop(0) #获取最早的event并踢出event队列
             self.clock = current_event.start_time
-            self.process(current_event, self.clock)
+            self.process(current_event, self.clock) #处理最早的事件
 
             for isi in self.last_request_starting:
                 last_request_starting = self.last_request_starting[isi]
@@ -782,14 +789,15 @@ class Simulator:
         required_predictors, ilp_x = self.postprocess_predictor_dict(required_predictors,
                                                                      canary_dict,
                                                                      ilp_x)
-        self.apply_predictor_dict(required_predictors)
-        self.apply_canary_dict(canary_dict, ilp_x)
+        self.apply_predictor_dict(required_predictors)  #把required的predictor应用在executor上，不同executor增减所需的predictor
+        self.apply_canary_dict(canary_dict, ilp_x) #将canary_dict中的路由信息转换成{('CPU', variant): canary_pct}的格式，更新每个executor中的canary_routing_table
         return
     
     def postprocess_predictor_dict(self, required_predictors, canary_dict, ilp_x):
         """ Upgrade predictors that are not present in canary dict to highest
         accuracy.
         """
+        #ilp的解进一步优化
         if len(required_predictors) == 0 or len(canary_dict) == 0 or len(ilp_x) == 0:
             return required_predictors
         
@@ -804,6 +812,9 @@ class Simulator:
             total += 1
             (variant, accelerator) = tuple
             # We don't want to replace those that are present in canary_dict
+            #在ilp计算完结果后，会将任务分配到机器上的比例记录在canary_dict里
+            #如果机器在canary_dict中，那就按部就班的设置
+            #但是有些机器没有被分配任务的，是空闲资源，另外操作
             if accelerator in accelerators_in_canary:
                 new_ilp_x[tuple] = ilp_x[tuple]
                 continue
@@ -812,6 +823,8 @@ class Simulator:
             # This is to ensure the cluster does not go under utilized since ILP
             # will only try to meet throughput, but will not use beyond it
             # This is used in conjunction with proportional routing
+            #如果是空闲资源，因为canary_dict里的使用到的机器已经解决吞吐问题了
+            #那么剩余的这些机器就可以按最好的模型变种进行推理
             upgraded_variant = self.find_most_accurate_feasible_variant(variant,
                                                                         accelerator.split('-')[0])
             new_tuple = (upgraded_variant, accelerator)
@@ -820,7 +833,7 @@ class Simulator:
             changed += 1
 
         new_required_predictors = self.get_required_predictors_from_ilpx(new_ilp_x)
-        ilp_utilization = 1 - changed / total
+        ilp_utilization = 1 - changed / total         #没被更改代表一开始就使用了，所以相当于ilp的解中使用机器对集群所有机器的占比
 
         self.use_proportional = True
         self.log.debug(f'Use proportional: {self.use_proportional}, changed '
@@ -889,6 +902,7 @@ class Simulator:
         variant_to_executor = {}
 
         # Build a dictionary 'existing_predictors'
+        #将executors中拥有的predictor记录下来作为现在existing的预测器
         existing_predictors = {}
         for ex_key in self.executors:
             executor = self.executors[ex_key]
@@ -921,6 +935,7 @@ class Simulator:
         all_tuple_combinations = self.generate_all_model_acc_keys()
 
         # Go through each key:
+        #比较required和existing的预测器数量，如果required>existing，则减少required的预测器数量
         for tuple_key in all_tuple_combinations:
             # Remove predictors if needed
             (model_variant, accelerator_type) = tuple_key
@@ -946,6 +961,7 @@ class Simulator:
                 existing -= 1
 
         # Go through each key:
+        #比较required和existing的预测器数量，如果required<existing，则减少required的预测器数量
         added = 0
         for tuple_key in required_predictors:
             (model_variant, accelerator_type) = tuple_key

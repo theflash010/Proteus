@@ -1157,6 +1157,7 @@ class Executor:
 
     
     def enqueue_request(self, event, clock):
+        #在executor中插入新的request，实际上是插入到了某一个predictor中
         ''' When batching is enabled, we send an incoming request to the queue of an
         appropriate predictor. The predictor will dequeue the request and process it
         with a batch of requests.
@@ -1172,7 +1173,7 @@ class Executor:
             if self.simulator.model_assignment == 'ilp' and self.simulator.use_proportional == True:
                 selected = None
                 weights = list(map(lambda x: x.peak_throughput, self.predictors.values()))
-                weights = np.ones(len(self.predictors))
+                weights = np.ones(len(self.predictors))  #等比率 ???
                 self.log.debug(f'weights: {weights}')
                 if not(any(x > 0 for x in weights)):
                     self.simulator.bump_failed_request_stats(event)
@@ -1180,7 +1181,7 @@ class Executor:
                     return
                 selected = random.choices(list(self.predictors.values()),
                                           weights=weights,
-                                          k=1)[0]
+                                          k=1)[0]  #所有predictor等比例随机选取一个predictor，获取其中的加速类型和模型变种
                 acc_type_unconverted = AccType(selected.acc_type).name
                 acc_type_converted = acc_type_unconverted
                 variant_name = selected.variant_name
@@ -1195,7 +1196,7 @@ class Executor:
                 selected = (acc_type_converted, variant_name)
 
             variants_dict = dict(filter(lambda x: (AccType(x[1].acc_type).name, x[1].variant_name) == selected,
-                                        self.predictors.items()))
+                                        self.predictors.items()))#筛选出符合所需加速器类型和模型变种的predictor
             variants = list(variants_dict.keys())
 
             if len(variants) == 0:
@@ -1205,12 +1206,12 @@ class Executor:
                 return
 
             self.log.debug(f'Variants: {variants}')
-            selected_predictor_id = random.choice(variants)
+            selected_predictor_id = random.choice(variants)#随机选取满足条件的predictor
             self.log.debug(f'Selected predictor id: {selected_predictor_id}')
             selected_predictor = self.predictors[selected_predictor_id]
             self.log.debug(f'Selected predictor: {selected_predictor}')
 
-            selected_predictor.enqueue_request(event, clock)
+            selected_predictor.enqueue_request(event, clock)#将请求插入到被选的predictor中，由这个predictor来处理
             self.assigned_requests[event.id] = selected_predictor
             return
         

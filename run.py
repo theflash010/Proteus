@@ -261,15 +261,15 @@ def main(args):
     for i in range(testing_steps):
         if model_assignment == 'ilp' or model_assignment == 'sommelier':
             if ilp.is_simulator_set() is False:
-                ilp.set_simulator(env.simulator)
+                ilp.set_simulator(env.simulator)  #利用ilp结果更新executor中的predictor以及百分比路由表
 
             if ilp_applied == True:
-                period_tuning = solve_interval
+                period_tuning = solve_interval   #重新安排资源的时间间隔
                 demand_sum = np.sum(observation[:, -2])
                 demand = np.array(observation[:rtypes, -2])
                 # Convert horizontal array to vertical
                 demand = demand[:, None]
-                env.simulator.add_moving_demand(demand)
+                env.simulator.add_moving_demand(demand)#加入预测的新demand量，写入ewma_demand中
                 last_10_demands.append(demand_sum)
                 if len(last_10_demands) > 10:
                     last_10_demands.pop(0)
@@ -281,7 +281,7 @@ def main(args):
                     period_tuning = solve_interval / 2
 
                 if i % period_tuning == 0 or i == 5 or i == 20:
-                    actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)
+                    actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)         #用新的demand建模并计算出ilp结果，将结果应用到simulator上，action返回值一定是None
                     ilp_rounds += 1
                 elif (i == 47 or i == 59 or i == 71 or i == 83) and 'normal_load' in trace_path:
                     actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)

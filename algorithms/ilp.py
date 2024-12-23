@@ -162,7 +162,8 @@ class Ilp(SchedulingAlgorithm):
 
         latencies = self.simulator.model_variant_runtimes
 
-        # First generate the parameter variables from the isi_dict
+        # First generate the parameter variables from the isi_dict 
+        #request type
         rtypes = []
 
         models = []
@@ -197,6 +198,7 @@ class Ilp(SchedulingAlgorithm):
         
         largest_batch_sizes = self.simulator.get_largest_batch_sizes()
 
+        #进行一些预处理，获取建模需要的参数A,s,p,b,z(ik_dict)
         for isi in range(num_isi):
             rtypes.append(isi)
 
@@ -209,9 +211,11 @@ class Ilp(SchedulingAlgorithm):
             for model_variant in model_variants:
                 models.append(model_variant)
 
+                #获得模型变种的准确率
                 A[model_variant] = self.simulator.model_variant_accuracies[(
                     isi_name, model_variant)]
 
+                #获得不同加速器和对应模型变种的峰值吞吐量
                 for accelerator in accelerators:
                     accelerator_type = accelerator.split('-')[0]
                     acc_latencies = {}
@@ -237,7 +241,8 @@ class Ilp(SchedulingAlgorithm):
                     p[accelerator, model_variant] = math.floor(throughput)
 
                     ik_dict[accelerator, isi] = 1
-
+                
+                #获取参数Bm,q 模型变种能否解决对应请求
                 for isi in range(num_isi):
                     if model_variant in self.simulator.model_variants[self.simulator.idx_to_executor[isi]]:
                         b[model_variant, isi] = 1
@@ -282,33 +287,34 @@ class Ilp(SchedulingAlgorithm):
                 self.log.debug('\nIncoming requests:' + str(sum(s.values())))
             
             # Set the objective
+            #除以100是为了将准确率从0~100范围转换为0~1范围
             m.setObjective((gp.quicksum(w) / sum(s.values()) / 100), GRB.MAXIMIZE)
 
             if 'accscale' in self.simulator.model_assignment:
                 m.addConstr((gp.quicksum(w) / sum(s.values())) >= MINIMUM_ACCURACY, 'c_min_acc')
 
-            m.addConstr(gp.quicksum(y) / sum(s.values()) >= self.beta, 'c_min_thput')
+            m.addConstr(gp.quicksum(y) / sum(s.values()) >= self.beta, 'c_min_thput') #beta不小于1，预留一部分来增加可行域
             for k in rtypes:            
-                m.addConstr(w[k] <= sum(sum(s[k]*z[i,k]*x[i,j]*A[j] for j in models) for i in accelerators), 'c1_5_' + str(k))
+                m.addConstr(w[k] <= sum(sum(s[k]*z[i,k]*x[i,j]*A[j] for j in models) for i in accelerators), 'c1_5_' + str(k))  #限制: 单个请求类别的累计准确率不小于w[k]
 
-                m.addConstr(sum(sum(b[j, k] * z[i, k] * x[i, j] for j in models) for i in accelerators) == sum(z[i, k] for i in accelerators), 'c3_3k_' + str(k))
+                m.addConstr(sum(sum(b[j, k] * z[i, k] * x[i, j] for j in models) for i in accelerators) == sum(z[i, k] for i in accelerators), 'c3_3k_' + str(k))#限制: 保证某种类型请求分发到的机器上所运行的模型可以解决这类请求
                 
-                m.addConstr(sum(z[i, k] for i in accelerators) == 1, 'c3_2_' + str(k))
+                m.addConstr(sum(z[i, k] for i in accelerators) == 1, 'c3_2_' + str(k)) #限制: 某个请求类别分发给不同机器的百分比和为1
 
             for i in accelerators:
-                m.addConstr(sum(x[i, j] for j in models) == 1, 'c2_' + str(i))
+                m.addConstr(sum(x[i, j] for j in models) == 1, 'c2_' + str(i))   #限制: 一个机器上只可以运行一个模型
 
-                m.addConstr(zp[i] == sum(z[i, k] for k in rtypes), 'c_zp_' + str(i))
-                m.addConstr(sum(sum(b[j, k] * z[i, k] * x[i, j] for j in models) for k in rtypes) == zp[i], 'c3_3i_' + str(i))
+                m.addConstr(zp[i] == sum(z[i, k] for k in rtypes), 'c_zp_' + str(i))#zp是一个临时变量
+                m.addConstr(sum(sum(b[j, k] * z[i, k] * x[i, j] for j in models) for k in rtypes) == zp[i], 'c3_3i_' + str(i))#限制: 保证某种类型请求分发到的机器上所运行的模型可以解决这类请求 z[i,k]!=0时，x[i,j]和b[j,k]都必须为1  和上面一个循环里面感觉有重合
 
-                m.addConstr(y[i] <= sum(p[i, j]*x[i, j] for j in models), 'c4_' + str(i))
+                m.addConstr(y[i] <= sum(p[i, j]*x[i, j] for j in models), 'c4_' + str(i))#计划分配的吞吐量不能超过峰值吞吐量
                 if self.beta <= 1:
                     m.addConstr(y[i] <= sum(z[i, k]*s[k] for k in rtypes), 'c5_' + str(i))
                 else:
-                    m.addConstr(y[i] <= self.beta * sum(z[i, k]*s[k] for k in rtypes), 'c5_' + str(i))
+                    m.addConstr(y[i] <= self.beta * sum(z[i, k]*s[k] for k in rtypes), 'c5_' + str(i))#限制: 实际分配量y不需要超过最大可能的分配量z[i,k]*s[k]的和，一般来说结合前面只会取等号 m.addConstr(gp.quicksum(y) / sum(s.values()) >= self.beta, 'c_min_thput')
 
-                m.addConstr(yp[i] == sum(p[i, j]*x[i, j] for j in models), 'c6_' + str(i))
-                m.addConstr(ypp[i] == sum(z[i, k]*s[k] for k in rtypes), 'c7_' + str(i))
+                m.addConstr(yp[i] == sum(p[i, j]*x[i, j] for j in models), 'c6_' + str(i))#yp是临时变量，记录机器i的峰值吞吐量
+                m.addConstr(ypp[i] == sum(z[i, k]*s[k] for k in rtypes), 'c7_' + str(i))#ypp是临时变量，记录机器i将会被百分路由算法分配的请求量
 
             if self.static == 'spec_acc':
                 required_predictors, canary_dict, _ = self.get_solution_from_file(self.starting_allocation)
@@ -379,7 +385,7 @@ class Ilp(SchedulingAlgorithm):
                 else:
                     decrement = 0.05
                 self.log.warn(f'No ILP solution with beta: {self.beta}, trying with: {(self.beta-decrement)}')
-                self.beta -= decrement
+                self.beta -= decrement  #ilp无解就减少beta值
         if solution_found == False:
             raise IlpException(f'No solution found even with beta: {self.beta}')
         
@@ -397,6 +403,7 @@ class Ilp(SchedulingAlgorithm):
         required_predictors = {}
         ilp_x = {}
 
+        #利用ilp的解生成分配策略，获取required_predictors和ilp_x
         for accelerator in accelerators:
             for model_variant in models:
                 if ilp_solution[accelerator, model_variant].X == 1:

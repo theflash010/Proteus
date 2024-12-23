@@ -79,7 +79,7 @@ class Predictor:
         
         # If the maximum batch size is 0, that means that predictor cannot even
         # serve a batch size of 1 without violating latency SLO
-        if self.max_batch_size == 0:
+        if self.max_batch_size == 0: #没有处理能力
             self.busy = True
         
         predictor_log = logging.FileHandler(f'logs/per_predictor/{self.id}.txt')
@@ -243,7 +243,7 @@ class Predictor:
         # and request cannot possibly be executed within deadline
 
         if self.task_assignment == TaskAssignment.CANARY and self.batching_algo == 'accscale':
-            self.pop_while_first_expires(clock)
+            self.pop_while_first_expires(clock) #将进行推理会导致请求超时的队首请求踢出队列
             batch_size = self.find_batch_size(requests=len(self.request_queue))
             self.log.debug(f'enqueue_request: Trying to find appropriate batch size. Number '
                            f'of requests in queue: {len(self.request_queue)}, batch size '
@@ -288,11 +288,13 @@ class Predictor:
             max_waiting_time = first_request_expiration - self.batch_processing_latency(batch_size, first_request)
 
             if clock < max_waiting_time:
+                #可以等就继续等
                 # we can still wait with new request in queue
                 self.generate_slo_expiring(first_request, max_waiting_time)
                 self.log.debug(f'Generated SLO_EXPIRING event for request {event.desc} '
                                f'to expire at {max_waiting_time}')
             else:
+                #不能等就直接执行
                 # if we execute a batch with the latest request, we will miss SLO
                 # of first request in the queue. therefore, execute batch size q-1 requests
                 if self.batching_algo == 'accscale':
@@ -319,7 +321,7 @@ class Predictor:
         
         model_asn = self.simulator.model_assignment
         if 'ilp' in model_asn or 'infaas' in model_asn or 'clipper' in model_asn:
-            self.drop_expired_requests(clock)
+            self.drop_expired_requests(clock)  #踢出超时的请求
         
         self.simulator.batch_size_counters[batch_size] += 1
 
@@ -347,13 +349,13 @@ class Predictor:
 
         # Since requests have been popped from the queue, we need to generate an
         # SLO_EXPIRING event for the new request at the head of the queue
-        if len(self.request_queue) > 0:
+        if len(self.request_queue) > 0:  #也许还有一些请求在队列里，对于新的队首请求要生成新的SLO_EXPIRING事件
             self.generate_head_slo_expiring()
 
         self.log.debug(f'Batch size given: {batch_size}, requests in queue after popping: '
                        f'{len(self.request_queue)}, dequeued_requests: {dequeued_requests}')
 
-        batch_processing_time = self.batch_processing_latency(batch_size, temp_queue[0])
+        batch_processing_time = self.batch_processing_latency(batch_size, temp_queue[0]) #获取推理时延
         finish_time = clock + batch_processing_time
         accuracy_seen = self.profiled_accuracy
 
@@ -362,7 +364,7 @@ class Predictor:
         batch_finished_late = False
         aimd_negative_feedback = False
         for request in temp_queue:
-            if finish_time > request.start_time + request.deadline:
+            if finish_time > request.start_time + request.deadline: #如果超时
                 if self.task_assignment == TaskAssignment.CANARY:
                     if self.batching_algo == 'accscale':
                         batch_finished_late = True
@@ -382,11 +384,11 @@ class Predictor:
                     batch_finished_late = True
                     pass
             self.simulator.generate_end_request_event(request, finish_time,
-                                                    accuracy_seen, qos_met)
+                                                    accuracy_seen, qos_met)#生成request的结束事件
             
         self.simulator.generate_finish_batch_event(finish_time=finish_time,
                                                    predictor=self,
-                                                   executor=self.executor)
+                                                   executor=self.executor)#生成一批batch的结束事件
         
         if aimd_negative_feedback:
             self.decrease_aimd_batch_size()
@@ -478,12 +480,12 @@ class Predictor:
 
         while first_request_expiring and queued_requests > 0:
             first_request = self.request_queue[0]
-            first_request_expiration = first_request.start_time + first_request.deadline
+            first_request_expiration = first_request.start_time + first_request.deadline  #第一个请求的过期时间
 
-            batch_size = self.find_batch_size(queued_requests)
+            batch_size = self.find_batch_size(queued_requests) #找到能处理predictor当前有的request数量的batch大小
             if batch_size == -1:
                 batch_size = self.max_batch_size
-            batch_processing_time = self.batch_processing_latency(batch_size, first_request)
+            batch_processing_time = self.batch_processing_latency(batch_size, first_request)#确定在这样的batch大小下，计算一次的延迟是多少
 
             self.log.debug(f'FINISH_BATCH callback: current time: {clock}, first request '
                            f'starts at {first_request.start_time} and expires at {first_request_expiration}, '
@@ -493,7 +495,7 @@ class Predictor:
             popped = False
 
             if clock + batch_processing_time > first_request_expiration:
-                failed_request = self.request_queue.pop(0)
+                failed_request = self.request_queue.pop(0)  #如果这个会超时，就直接踢出request队列，不处理了，然后继续检测下一个请求会不会超时
                 self.simulator.bump_failed_request_stats(failed_request)
                 queued_requests = len(self.request_queue)
                 popped = True
@@ -503,6 +505,7 @@ class Predictor:
         
         # Since requests have been popped from the queue, we need to generate an
         # SLO_EXPIRING event for the new request at the head of the queue
+        #剩下的request都是不会超时的，对目前队列里的第一个请求生成一个SLO_EXPIRING事件用作提醒，因为每插入一个请求，会导致处理的batch_size会变大，导致推理时间更久，第一个请求的最晚等待时间会提前，需要重新生成一个SLO_EXPIRING事件来提醒
         self.generate_head_slo_expiring()
 
         return
@@ -512,7 +515,9 @@ class Predictor:
         ''' Call the simulator's handler for generating an SLO_EXPIRING
         event
         '''
+        
         if event.id in self.slo_expiring_dict and self.slo_expiring_dict[event.id] == time:
+            #如果请求队列里的第一个请求没有什么变化，那么不需要生成新的提醒
             # We don't need to generate a new SLO_EXPIRING event since we already have
             # an event with the same expiration time (because batch size hasn't changed)
             return
@@ -521,7 +526,7 @@ class Predictor:
         self.simulator.generate_slo_expiring_event(time, event,
                                                    predictor=self,
                                                    executor=self.executor,
-                                                   event_counter=event.id)
+                                                   event_counter=event.id)     #######################zn
         self.slo_expiring_dict[event.id] = time
         self.event_counter += 1
         return
@@ -574,7 +579,7 @@ class Predictor:
             return
 
         if self.task_assignment == TaskAssignment.CANARY and self.batching_algo == 'accscale':
-            batch_size = self.find_batch_size(requests=len(self.request_queue))
+            batch_size = self.find_batch_size(requests=len(self.request_queue))  #再不跑队列中第一个request就要超时了，立刻计算batch size进行处理
             self.log.debug(f'slo_expiring_callback: Trying to find appropriate batch size. '
                            f'Number of requests in queue: {len(self.request_queue)}, '
                            f'batch size returned: {batch_size}')
@@ -596,7 +601,7 @@ class Predictor:
         
         # if self.batching_algo is not 'aimd':
         self.log.debug(f'Calling process_batch from slo_expiring_callback')
-        self.process_batch(clock, batch_size)
+        self.process_batch(clock, batch_size) #开始处理给定batch下的一批数据
         return
     
 
@@ -676,6 +681,7 @@ class Predictor:
 
     
     def generate_head_slo_expiring(self):
+        #对于请求队列里的第一个请求生成超时提醒
         ''' If any request is popped from the head of the queue and the queue has
         a new head, we need to generate an SLO_EXPIRING event for it to keep track
         of its expiry
@@ -722,10 +728,11 @@ class Predictor:
 
     
     def find_batch_size(self, requests):
+        #这是adaptively batching中的batch大小
         ''' Find the appropriate batch size for a given number of requests by
         rounding up to the nearest bigger batch size
         '''
-        batch_size_index = self.find_maximum_that_fills(requests)
+        batch_size_index = self.find_maximum_that_fills(requests)  #这里使用简化版的batch大小，找到一个大于当前requests数量的合法batch大小就可以
         if batch_size_index >= len(self.batch_sizes_allowed):
             return -1
         else:
