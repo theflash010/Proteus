@@ -136,7 +136,7 @@ class SchedulingEnv(gym.Env):
         observation = self.state
 
         # if no more requests then we are done
-        done = self.simulator.is_done()
+        done = self.simulator.is_done()  #是否所有请求都被执行完了
 
         # return observation, reward, done, self.failed_requests
         return observation, 0, done, {}

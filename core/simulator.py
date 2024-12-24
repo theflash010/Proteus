@@ -768,7 +768,7 @@ class Simulator:
     def get_successful_requests(self):
         return self.successful_requests
 
-    def print_assignment(self):
+    def print_assignment(self):  #展示每一个executor的加速器的分配情况，四种加速器各有多少台
         self.log.debug('Printing assignment in simulator...')
         for isi in self.executors:
             assignment = self.executors[isi].num_predictor_types
@@ -1361,7 +1361,7 @@ class Simulator:
         request_finished = executor.finish_request(event, clock)
         if request_finished:
             processing_time = clock - event.event_counter
-            self.bump_successful_request_stats(event, processing_time=processing_time)
+            self.bump_successful_request_stats(event, processing_time=processing_time)  #记录request被执行完的情况，包括准确率，处理时间等
             self.latency_logfile.write(f'{isi},{event.event_counter},{clock},{processing_time}\n')
         else:
             self.bump_failed_request_stats(event)
@@ -1564,16 +1564,16 @@ class Simulator:
         for key in self.executors:
             predictors = self.executors[key].predictors
             total_predictors += len(predictors)
-            total_queued += sum(list(map(lambda x: len(x.request_queue), predictors.values())))
-            peak_throughputs = list(map(lambda x: x.peak_throughput, predictors.values()))
-            total_capacity += sum(peak_throughputs)
+            total_queued += sum(list(map(lambda x: len(x.request_queue), predictors.values()))) #将一个executor的所有predictor的仍然在request_queue队列里等待的request数量累积起来
+            peak_throughputs = list(map(lambda x: x.peak_throughput, predictors.values())) 
+            total_capacity += sum(peak_throughputs) #将一个executor的所有predictor的峰值吞吐量累积起来
 
-            total_served += sum(list(map(lambda x: x.served_requests_per_step, predictors.values())))
+            total_served += sum(list(map(lambda x: x.served_requests_per_step, predictors.values()))) #将一个executor的所有predictor在这一个step中处理完的请求数量累积起来
 
-            incoming_requests = list(map(lambda x: x.incoming_requests_per_step, predictors.values()))
+            incoming_requests = list(map(lambda x: x.incoming_requests_per_step, predictors.values()))#列举一个executor的所有predictor在这一个step中被分发到的请求数量
             incoming_requests_predictors = list(map(lambda x: (AccType(x.acc_type).name, x.variant_name),
                                                     predictors.values()))
-            incoming_requests_ratio = [i / j if j > 0 else 0 for i, j in zip(incoming_requests, peak_throughputs)]
+            incoming_requests_ratio = [i / j if j > 0 else 0 for i, j in zip(incoming_requests, peak_throughputs)] #计算传入请求比率
 
             if any(x > 1.0 for x in incoming_requests_ratio):
                 self.log.debug(f'executor: {key}, incoming requests ratio: {incoming_requests_ratio}')
@@ -1582,7 +1582,7 @@ class Simulator:
             
             for key in predictors:
                 predictor = predictors[key]
-                predictor.served_requests_per_step = 0
+                predictor.served_requests_per_step = 0  #新的一轮复原为0
             predictors = list(map(lambda x: (x.variant_name, f'acc_type: {x.acc_type}',
                                              f'queue length: {len(x.request_queue)}',
                                              f'peak throughput: {x.peak_throughput}',),

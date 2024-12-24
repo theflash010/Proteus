@@ -393,7 +393,7 @@ def main(args):
                              ilp_utilization=ilp_utilization,
                              proportional_lb=proportional_lb,
                              ilp_demand=ilp_demand,
-                             demand_ewma=demand_ewma)
+                             demand_ewma=demand_ewma) #将一次step后的总准确率，推理完成数量和失败数量等信息写入.csv文件中记录
         total_accuracy = new_total_accuracy
         total_successful = new_total_successful
         total_dropped = new_dropped
@@ -406,7 +406,7 @@ def main(args):
         new_late_per_model = env.simulator.slo_timeouts_per_executor['late']
 
         window_total_accuracy_per_model = dict_subtraction(new_total_accuracy_per_model,
-                                                           total_accuracy_per_model)
+                                                           total_accuracy_per_model) #两个字典key相同的部分，对应的值进行相减，计算出仅仅这一step内的累计准确率
         window_total_successful_per_model = dict_subtraction(new_total_successful_per_model,
                                                              total_successful_per_model)
         window_dropped_per_model = dict_subtraction(new_dropped_per_model,

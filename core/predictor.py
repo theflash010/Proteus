@@ -216,7 +216,7 @@ class Predictor:
         self.request_dict[event.id] = 1
         self.request_queue.append(event)
         self.event_counter += 1
-        self.incoming_requests_per_step += 1
+        self.incoming_requests_per_step += 1  #计数器，分到的请求数量
 
         # If predictor is busy, we have to wait until we get a FINISH_BATCH event
         # before we further process this request
@@ -732,7 +732,7 @@ class Predictor:
         ''' Find the appropriate batch size for a given number of requests by
         rounding up to the nearest bigger batch size
         '''
-        batch_size_index = self.find_maximum_that_fills(requests)  #这里使用简化版的batch大小，找到一个大于当前requests数量的合法batch大小就可以
+        batch_size_index = self.find_maximum_that_fills(requests)  #这里使用简化版的batch大小，找到一个是[1,2,4,8]小于等于且最接近requests的batch size
         if batch_size_index >= len(self.batch_sizes_allowed):
             return -1
         else:
