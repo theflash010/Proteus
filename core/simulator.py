@@ -676,6 +676,9 @@ class Simulator:
         while len(self.event_queue) > 0 and (self.event_queue[0].start_time <= until or until == -1):
             current_event = self.event_queue.pop(0) #获取最早的event并踢出event队列
             self.clock = current_event.start_time
+
+            print(f"\nevent id: {current_event.id}, event start time: {current_event.start_time}, event type: {current_event.type.name}")
+
             self.process(current_event, self.clock) #处理最早的事件
 
             for isi in self.last_request_starting:
@@ -1360,7 +1363,7 @@ class Simulator:
         executor = self.executors[isi]
         request_finished = executor.finish_request(event, clock)
         if request_finished:
-            processing_time = clock - event.event_counter
+            processing_time = clock - event.event_counter  #事件到达时间和完成时间的差
             self.bump_successful_request_stats(event, processing_time=processing_time)
             self.latency_logfile.write(f'{isi},{event.event_counter},{clock},{processing_time}\n')
         else:

@@ -1208,8 +1208,11 @@ class Executor:
             self.log.debug(f'Variants: {variants}')
             selected_predictor_id = random.choice(variants)#随机选取满足条件的predictor
             self.log.debug(f'Selected predictor id: {selected_predictor_id}')
-            selected_predictor = self.predictors[selected_predictor_id]
+            selected_predictor = list(self.predictors.values())[0]############一定要改回来selected_predictor = self.predictors[selected_predictor_id]
             self.log.debug(f'Selected predictor: {selected_predictor}')
+
+
+            print(f"event({event.id}) enqueues predictor {selected_predictor.id}")
 
             selected_predictor.enqueue_request(event, clock)#将请求插入到被选的predictor中，由这个predictor来处理
             self.assigned_requests[event.id] = selected_predictor

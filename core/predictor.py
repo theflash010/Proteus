@@ -523,6 +523,9 @@ class Predictor:
             return
         self.log.debug(f'Generating SLO_EXPIRING event for request {event.id} '
                       f'to expire at {time}')
+        
+        print(f"Generating SLO_EXPIRING event for request {event.id} to expire at {time}")
+
         self.simulator.generate_slo_expiring_event(time, event,
                                                    predictor=self,
                                                    executor=self.executor,
@@ -732,7 +735,7 @@ class Predictor:
         ''' Find the appropriate batch size for a given number of requests by
         rounding up to the nearest bigger batch size
         '''
-        batch_size_index = self.find_maximum_that_fills(requests)  #这里使用简化版的batch大小，找到一个大于当前requests数量的合法batch大小就可以
+        batch_size_index = self.find_maximum_that_fills(requests)  #这里使用简化版的batch大小，找到一个小于等于当前requests的二的幂作为batch
         if batch_size_index >= len(self.batch_sizes_allowed):
             return -1
         else:
