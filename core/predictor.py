@@ -201,8 +201,8 @@ class Predictor:
         if event.id not in self.request_dict:
             return False
         
-        self.served_requests_per_step += 1
-        del self.request_dict[event.id]
+        self.served_requests_per_step += 1  #计数器加1
+        del self.request_dict[event.id]  #删除request_dict中的元素
         if len(self.request_dict) == 0:
             self.busy_till = None
 
