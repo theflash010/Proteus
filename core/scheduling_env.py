@@ -39,9 +39,14 @@ class SchedulingEnv(gym.Env):
         self.model_assignment = model_assignment
 
         # max total predictors for each accelerator type (CPU, GPU, VPU, FPGA) respectively
-        self.predictors_max = self.max_no_of_accelerators * np.ones(self.n_accelerators * self.n_qos_levels)
-        self.total_predictors = self.max_no_of_accelerators * np.ones(self.n_accelerators)
+        #self.predictors_max = self.max_no_of_accelerators * np.ones(self.n_accelerators * self.n_qos_levels)
+        #self.total_predictors = self.max_no_of_accelerators * np.ones(self.n_accelerators)
         
+        only_gpu=np.zeros(self.n_accelerators * self.n_qos_levels)
+        only_gpu[1]=1
+        self.predictors_max = self.max_no_of_accelerators * only_gpu
+
+
         # simulator environment that our agent will interact with
         self.simulator = Simulator(trace_path=trace_dir, mode='debugging',
                                    job_sched_algo=job_sched_algo,
