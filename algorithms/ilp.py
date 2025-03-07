@@ -170,10 +170,11 @@ class Ilp(SchedulingAlgorithm):
 
         accelerators = []
         for acc in range(num_max_acc):
-            accelerators.append('CPU-' + str(acc))
+            """ accelerators.append('CPU-' + str(acc))
             accelerators.append('GPU_AMPERE-' + str(acc))
             accelerators.append('VPU-' + str(acc))
-            accelerators.append('GPU_PASCAL-' + str(acc))
+            accelerators.append('GPU_PASCAL-' + str(acc)) """
+            accelerators.append('GPU_PASCAL-' + str(acc))  #only_gpu要求加速器只能有一种
 
         self.accelerator_dict = {'CPU': 0, 'GPU_AMPERE': 1, 'VPU': 2, 'GPU_PASCAL': 3}
 

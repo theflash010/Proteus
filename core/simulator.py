@@ -1015,7 +1015,8 @@ class Simulator:
         # merge list of lists into one list
         all_model_variants = sum(all_model_variants, [])
 
-        all_acc_types = ['CPU', 'GPU_PASCAL', 'VPU', 'GPU_AMPERE']
+        # all_acc_types = ['CPU', 'GPU_PASCAL', 'VPU', 'GPU_AMPERE']
+        all_acc_types = ['GPU_PASCAL']
 
         all_tuples = []
         for variant in all_model_variants:

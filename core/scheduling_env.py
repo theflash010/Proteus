@@ -33,18 +33,19 @@ class SchedulingEnv(gym.Env):
 
         self.allocation_window = allocation_window
         
-        self.max_no_of_accelerators = 10
+        self.max_no_of_accelerators = 40
         self.max_runtime = 1000
 
         self.model_assignment = model_assignment
 
         # max total predictors for each accelerator type (CPU, GPU, VPU, FPGA) respectively
-        #self.predictors_max = self.max_no_of_accelerators * np.ones(self.n_accelerators * self.n_qos_levels)
-        #self.total_predictors = self.max_no_of_accelerators * np.ones(self.n_accelerators)
-        
+        """ self.predictors_max = self.max_no_of_accelerators * np.ones(self.n_accelerators * self.n_qos_levels)
+        self.total_predictors = self.max_no_of_accelerators * np.ones(self.n_accelerators) """
+
         only_gpu=np.zeros(self.n_accelerators * self.n_qos_levels)
-        only_gpu[1]=1
+        only_gpu[3]=1
         self.predictors_max = self.max_no_of_accelerators * only_gpu
+        self.total_predictors = self.max_no_of_accelerators * only_gpu
 
 
         # simulator environment that our agent will interact with
@@ -92,6 +93,7 @@ class SchedulingEnv(gym.Env):
                                                 shape=(self.n_executors+1, self.features), dtype=np.int)
 
         action_space_max = np.concatenate(([self.n_executors], self.predictors_max))
+        action_space_max = [max(1, x) for x in action_space_max]  #由于多维离散空间要求每个维度的最大值k,必须满足k>=1,因为每个维度的活动范围是[0,k-1]，而only_gpu会引入三个维度为0导致报错
         self.action_space = gym.spaces.MultiDiscrete(action_space_max)
 
         # initializing a random state
