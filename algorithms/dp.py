@@ -1,10 +1,11 @@
 import math
+import logging
 import numpy as np
 from algorithms.base import SchedulingAlgorithm
 
 class Dp(SchedulingAlgorithm):
     def __init__(self, allocation_window, beta, logging_level, starting_allocation=None,
-                 static=None, profiling_mode=False,accelerator_type="GPU_PASCAL"):  #undo 在simulator类中加入属性acc_type 表明同构的计算资源类型
+                 static=None, profiling_mode=False,accelerator_type="GPU_PASCAL"):  #undo 在simulator类中加入属性accelerator_type 表明同构的计算资源类型
         SchedulingAlgorithm.__init__(self, 'ILP')
 
         self.log = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class Dp(SchedulingAlgorithm):
         # divide demand by time elapsed since last measurement to get demand in
         # units of requests per second
         demand = demand_since_last / (self.allocation_window / 1000)
-        demand = math.ceil(demand)  #吞吐量由于要是整数，所以向上取整
+        demand = np.ceil(demand)  #吞吐量由于要是整数，所以向上取整
         self.log.info(f'demand: {sum(demand)}')
 
         missed_requests = observation[0:num_isi, -1]
@@ -76,8 +77,8 @@ class Dp(SchedulingAlgorithm):
         elif accelerator_type == 'GPU_PASCAL':
             acc_latencies = profiled_latencies[4]
 
-        all_models=[]  #所有任务的模型变种的集合，all_models[isi]代表第isi类任务的模型变种
-        for isi in num_isi:
+        all_models=[]  #预处理所有任务的模型变种的集合，all_models[isi]代表第isi类任务的模型变种
+        for isi in range(num_isi):
             all_models[isi]={}
             isi_name = self.simulator.idx_to_executor[isi]
             model_variants = self.simulator.model_variants[isi_name]
@@ -97,6 +98,44 @@ class Dp(SchedulingAlgorithm):
                 all_models[isi][model_variant]=[throughput,acc]
 
         gpu_num=num_max_acc
+
+        least_num=self.least_gpu(all_models,demand)  #计算出每个任务需要的最少gpu数量，然后将多余的进行分配
+
+        remain_num=gpu_num-sum(least_num)
+        extra_num=np.zeros(num_isi)
+        for isi in range(0,num_isi-1):
+            extra_num[isi]=remain_num*(float(demand[isi])/sum(demand))  #最朴素的做法，按照demand多少进行分配      undo后续有时间进行改进
+        if num_isi>1:
+            extra_num[num_isi-1]=remain_num-sum(extra_num) #最后一个任务需要拿掉所有剩下的
+
+        used_num=least_num+extra_num  #确定下了每个任务的gpu数量情况 后面直接使用背包算法求有限情况下的最大准确率策略
+
+        required_predictors={}
+        canary_dict=[]
+        for isi in range(num_isi):
+            solution=self.sub_problem(isi,demand,used_num[isi],all_models)
+            #记录所有需要的acc_model数量
+            required_predictors=required_predictors | solution
+            #计算isi指定任务的路由百分比
+            canary_dict[isi]={}
+            throughput_sum=0
+            for (model_variant,accelerator_type) in solution:
+                throughput_sum+=all_models[isi][model_variant][0]*solution[(model_variant,accelerator_type)]  #计算指定isi任务的所有模型的吞吐量
+            for(model_variant,accelerator_type) in solution:
+                percentage=all_models[isi][model_variant][0]*solution[(model_variant,accelerator_type)]/float(throughput_sum)  #计算不同(model,acc)组合的吞吐量占比形成路由信息
+                canary_dict[isi][(model_variant,accelerator_type)]=percentage
+
+        return required_predictors,canary_dict
+    
+    def least_gpu(self,all_models,demand):
+        cnt=[]  #记录所有任务所需的最小gpu数量，按isi标号
+        for isi in range(self.num_isi):
+            max_t=0 #该任务下所有模型中最大吞吐量
+            for model_variant in all_models[isi]:
+                max_t=max(max_t,all_models[isi][model_variant][0])
+            tmp=math.ceil(demand[isi]/float(max_t))  #tmp代表需要最烂的模型副本的数量
+            cnt[isi]=tmp #undo 后续需要修改，由于一个模型可能需要不止一个gpu，这里tmp需要乘以gpy使用数
+        return cnt
 
     def sub_problem(self,isi,demand,gpu_num,all_models):  #undo 有关demand 由于使用背包算法，需要将demand增大一部分再进行求解
         current_models=all_models[isi]
@@ -127,11 +166,16 @@ class Dp(SchedulingAlgorithm):
         tmp_gpu_num=gpu_num
         cnt=np.zeros(model_num)  #记录调度策略，每个模型有多少副本
         while max_mul:
-            tmp=record[tmp_demand][tmp_gpu_num]-1   #由于在记录的时候record[j][k是从1开始
+            tmp=record[tmp_demand][tmp_gpu_num]-1   #由于在记录的时候record[j][k]是从1开始
             cnt[tmp]+=1    
             (sub_demand,sub_gpu_num)=current_models[model_name[tmp]]
             tmp_demand-=sub_demand
             tmp_gpu_num-=tmp_gpu_num
 
-        #最后结果保存在cnt数组中
-        return cnt
+        #将cnt转换为required_predictors
+        required_predictors={}
+        for i in range(model_num):
+            if cnt[i]:  #只有非0个数的模型才需要记录下来
+                tuple_key=(current_models[i],self.accelerator_type)
+                required_predictors[tuple]=cnt[i]
+        return required_predictors      #后续可能需要返回一个最大准确率，返回两个变量(required_predictors,acc_max)

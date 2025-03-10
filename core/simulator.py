@@ -1060,9 +1060,17 @@ class Simulator:
             executor_routing_table = dict(filter(lambda x: x[0][2] == idx, routing_table_ijk.items()))
             # just cleaning up from format {('CPU-0', variant, 0): canary_pct}
             # to {('CPU', variant): canary_pct}
-            executor_routing_table = dict(map(lambda x: ((x[0][0].split('-')[0], x[0][1]), x[1]),
-                                              executor_routing_table.items()))
-            executor.apply_routing_table(executor_routing_table)
+            """ executor_routing_table = dict(map(lambda x: ((x[0][0].split('-')[0], x[0][1]), x[1]),
+                                              executor_routing_table.items()))   """
+            tmp={}
+            for x in executor_routing_table:
+                acc_name=x[0].split('-')[0]
+                model_name=x[1]
+                if (acc_name,model_name) in tmp:
+                    tmp[(acc_name,model_name)]+=executor_routing_table[x]   #如果有重复的 加速器_模型变种组合 ，就将路由百分比累计为一个，因为这些重复的组合在路由的时候没有任何区别
+                else:
+                    tmp[(acc_name,model_name)]=executor_routing_table[x]
+            executor.apply_routing_table(tmp)
         return
 
     def null_action(self, action, idx):
