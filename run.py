@@ -13,6 +13,7 @@ from core.scheduling_env import SchedulingEnv
 from core.utils import dict_subtraction
 from algorithms.clipper import Clipper
 from algorithms.ilp import Ilp
+from algorithms.dp import Dp
 
 
 os.environ["GRB_LICENSE_FILE"] = "/opt/gurobi/gurobi.lic"
@@ -40,7 +41,7 @@ def getargs():
 
 def validate_config(config: dict, filename: str):
     model_allocation_algos = ['ilp', 'infaas', 'clipper', 'ilp', 'infaas_v2',
-                              'sommelier']
+                              'sommelier', 'dp']
     job_sched_algos = ['random', 'round_robin', 'eft_fifo', 'lft_fifo', 'infaas',
                        'canary_routing']
     batching_algorithms = ['disabled', 'accscale', 'aimd', 'infaas', 'nexus']
@@ -84,11 +85,11 @@ def validate_config(config: dict, filename: str):
                               f'config file: {filename}\nsolve_interval value is needed if '
                               f'model allocation is one of the following: ilp, sommelier')
     
-    if not(model_allocation in ['ilp', 'sommelier', 'infaas_v2']) and 'solve_interval' in config:
+    if not(model_allocation in ['ilp', 'sommelier', 'infaas_v2','dp']) and 'solve_interval' in config:
         raise ConfigException(f'unexpected parameter solve_interval specificed in config: {filename}'
                               f'\solve_interval is only needed for ILP or Sommelier')
 
-    if not(model_allocation in ['ilp', 'sommelier']) and 'beta' in config:
+    if not(model_allocation in ['ilp', 'sommelier','dp']) and 'beta' in config:
         raise ConfigException(f'unexpected parameter beta specificed in config: {filename}'
                               f'\nbeta is only needed for ILP or Sommelier')
 
@@ -207,6 +208,9 @@ def main(args):
                   static='spec_acc')
         ilp_applied = True
         print('Testing with Sommelier model switching policy (spec_acc)')
+    elif model_assignment == 'dp':
+        dp=Dp(allocation_window=allocation_window,beta=beta,logging_level=logging_level,
+              starting_allocation=config['static_allocation'])
     else:
         print('Undefined mode, exiting')
         sys.exit(0)
@@ -338,6 +342,17 @@ def main(args):
         elif model_assignment == 'clipper':
             clipper.apply_solution()
             action = env.simulator.null_action(env.action_space.sample(), 1)
+        elif model_assignment == 'dp':
+            if dp.is_simulator_set() is False:
+                dp.set_simulator(env.simulator)
+            if i % solve_interval == 0:
+                demand_sum = np.sum(observation[:, -2])
+                demand = np.array(observation[:rtypes, -2])
+                # Convert horizontal array to vertical
+                demand = demand[:, None]
+                env.simulator.add_moving_demand(demand)#加入预测的新demand量，写入ewma_demand中
+                dp.run(observation,env.n_accelerators, env.max_no_of_accelerators)
+                action = env.simulator.null_action(env.action_space.sample(), 1)  #action貌似没啥用
         else:
             print(f'Unknown model assignment algorithm: {model_assignment}')
             print('Exiting..')

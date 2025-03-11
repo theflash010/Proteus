@@ -793,6 +793,11 @@ class Simulator:
         self.apply_canary_dict(canary_dict, ilp_x) #将canary_dict中的路由信息转换成{('CPU', variant): canary_pct}的格式，更新每个executor中的canary_routing_table
         return
     
+    def apply_dp_solution(self,required_predictors,canary_dict):
+        self.apply_predictor_dict(required_predictors)  #把required的predictor应用在executor上，不同executor增减所需的predictor
+        self.apply_dp_canary_dict(canary_dict) #将canary_dict中的路由信息转换成{('CPU', variant): canary_pct}的格式，更新每个executor中的canary_routing_table
+        return
+
     def postprocess_predictor_dict(self, required_predictors, canary_dict, ilp_x):
         """ Upgrade predictors that are not present in canary dict to highest
         accuracy.
@@ -1073,6 +1078,26 @@ class Simulator:
             executor.apply_routing_table(tmp)
         return
 
+    def apply_dp_canary_dict(self,canary_dict):
+        for idx in self.idx_to_executor:
+            isi = self.idx_to_executor[idx]
+            executor = self.executors[isi]
+            executor_routing_table = canary_dict[idx]
+            # just cleaning up from format {('CPU-0', variant, 0): canary_pct}
+            # to {('CPU', variant): canary_pct}
+            """ executor_routing_table = dict(map(lambda x: ((x[0][0].split('-')[0], x[0][1]), x[1]),
+                                              executor_routing_table.items()))   """
+            tmp={}
+            for x in executor_routing_table:
+                model_name=x[0]
+                acc_name=x[1]
+                if (acc_name,model_name) in tmp:
+                    tmp[(acc_name,model_name)]+=executor_routing_table[x]   #如果有重复的 加速器_模型变种组合 ，就将路由百分比累计为一个，因为这些重复的组合在路由的时候没有任何区别
+                else:
+                    tmp[(acc_name,model_name)]=executor_routing_table[x]
+            executor.apply_routing_table(tmp)
+        return
+    
     def null_action(self, action, idx):
         action[0] = idx
         action[1:] = np.zeros(len(action)-1)
