@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "cwd":"/home/legend/Proteus",
             "python": "/home/legend/miniconda3/envs/proteus/bin/python3.9",
-            "args":["--config_file","configs/zipf_exponential/proteus.json"]
+            "args":["--config_file","configs/zipf_exponential/dp.json"]
         }
     ]
 }

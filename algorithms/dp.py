@@ -65,12 +65,12 @@ class Dp(SchedulingAlgorithm):
         
         current_alloc = observation[0:num_isi, 0:num_acc_types]
 
+        precision=1 #控制小数点后精度
         # EWMA over sliding window
         demand_since_last = self.simulator.ewma_demand.ravel()  #得到dp的输入，吞吐量的要求
         # divide demand by time elapsed since last measurement to get demand in
         # units of requests per second
-        demand = demand_since_last / (self.allocation_window / 1000)
-        demand = np.ceil(demand)  #吞吐量由于要是整数，所以向上取整
+        demand = demand_since_last / (self.allocation_window / 1000)*precision  #是浮点数，按照可以接受的精度进行扩展
         self.log.info(f'demand: {sum(demand)}')
         if sum(demand) == 0:
             self.log.error('No requests received, terminating DP.')
@@ -106,7 +106,7 @@ class Dp(SchedulingAlgorithm):
                 else:
                     latency = acc_latencies[(isi_name, model_variant, largest_batch_size)]
                 throughput= 0 if latency is None else largest_batch_size * 1000 / latency
-                throughput=math.floor(throughput)  #吞吐量向下取整
+                throughput=math.floor(throughput*precision)  #按照可以接受的精度进行扩展，吞吐量向下取整
                 #获得模型变种的准确率
                 acc = self.simulator.model_variant_accuracies[(isi_name, model_variant)]    
 
@@ -119,10 +119,12 @@ class Dp(SchedulingAlgorithm):
 
         remain_num=gpu_num-sum(least_num)
         extra_num=np.zeros(num_isi)
-        for isi in range(0,num_isi-1):
-            extra_num[isi]=int(math.floor(remain_num*(float(demand[isi])/sum(demand))))  #最朴素的做法，按照demand多少进行分配      undo后续有时间进行改进
-        if num_isi>1:
-            extra_num[num_isi-1]=remain_num-sum(extra_num) #最后一个任务需要拿掉所有剩下的
+        for isi in range(0,num_isi):
+            extra_num[isi]=int(math.floor(remain_num*(float(demand[isi])/sum(demand))))  #最朴素的做法，按照demand多少进行分配 最后剩余的gpu全部给demand最大的任务     undo后续有时间进行改进
+        tmp_isi=0  #寻找最大demand的任务标号
+        for isi in range(1,num_isi): 
+            tmp_isi=isi if demand[isi]>demand[tmp_isi] else tmp_isi
+        extra_num[tmp_isi]+=remain_num-sum(extra_num) 
 
         used_num=least_num+extra_num  #确定下了每个任务的gpu数量情况 后面直接使用背包算法求有限情况下的最大准确率策略
 
@@ -157,15 +159,21 @@ class Dp(SchedulingAlgorithm):
 
     def sub_problem(self,isi,target_demand,gpu_num,all_models):  #target_demand是系统所需的请求量，经过条件判断后，demand是扩增后的需求量
         current_models=all_models[isi]
-        alpha=1.05#扩增系数
-        min_throughput = min([value[0] for value in current_models.values()])
+        alpha=1.2#扩增系数
+
+        #确定demand
+        min_throughput=0
+        for value in current_models.values():
+            if value[0]>0:
+                min_throughput=min(min_throughput,value[0]) if min_throughput>0 else value[0]
         if target_demand<min_throughput:
             demand=min_throughput  #demand超级小的情况
         else:
-            demand=int(target_demand*alpha) 
+            demand=math.floor(target_demand*alpha) 
         model_num=len(current_models)
         model_name=list(current_models.keys())
         
+        #开始背包算法
         mul=np.zeros((demand+1, gpu_num+1))    #动态规划数组   时间复杂度是三维背包,空间复杂度优化为二维
         mul[:] = -1 #所有元素都设置为-1，除了mul[0][0]
         for i in range(0,gpu_num+1):
@@ -184,10 +192,10 @@ class Dp(SchedulingAlgorithm):
                     if solve1>solve2:  #当在给定条件下，使用第i个模型的时候，导致一个新的最大值，就记录下所使用的模型
                         record[j][k]=i
                     mul[j][k]=max(solve1,solve2)
-
-        max_acccuracy=0.0
-        record_demand=0
-        record_num=0
+        
+        #在背包计算完后进行选择最佳策略  选择record_demand  record_num
+        solutions=[]  #先将所有可能的demand情况下的方案记录下来，根据准确率从大到小排序  前list_len个准确率中找吞吐量最大的
+        list_len=5
         for d in range(target_demand,demand+1):
             max_mul=0
             tmp_record_num=0
@@ -195,21 +203,42 @@ class Dp(SchedulingAlgorithm):
                 if(mul[d][n]>max_mul):
                     max_mul=mul[d][n]
                     tmp_record_num=n
-            if(max_mul/d >max_acccuracy):
-                max_acccuracy=max_mul/d
-                record_demand=d
-                record_num=tmp_record_num
-        max_mul=mul[record_demand][record_num] #undo 后续改进，demand可以超出一部分，所有可能的demand，对gpu_num这一维度进行遍历，因为demand要固定，但是gpu_num这一维度不需要，只要求不大于
+            solutions.append([max_mul/d,d,tmp_record_num])  #准确率 需求 gpu数量
+        solutions.sort(key=lambda x: x[0], reverse=True) #按准确率从大到小排序
+        max_demand=0
+        record_demand=0        
+        record_num=0
+        for i in range(0,min(list_len,len(solutions))): #准确率前list_len中找到吞吐量最大的
+            if(solutions[i][1]>max_demand):
+                max_demand=solutions[i][1]
+                (record_demand,record_num)=solutions[i][1:]
+            
+
+        #获取最佳策略后，根据dp反推每个模型的数量 记录在cnt中
+        max_mul=mul[record_demand][record_num] #do 后续改进，demand可以超出一部分，所有可能的demand，对gpu_num这一维度进行遍历，因为demand要固定，但是gpu_num这一维度不需要，只要求不大于
         tmp_demand=record_demand
         tmp_gpu_num=record_num
         cnt=np.zeros(model_num)  #记录调度策略，每个模型有多少副本
         while max_mul>0:
             tmp=int(record[tmp_demand][tmp_gpu_num]-1)   #由于在记录的时候record[j][k]是从1开始
-            cnt[tmp]+=1    
+            cnt[tmp]+=1    #模型数量加1
             (sub_throughput,sub_acc)=current_models[model_name[tmp]]
+            tmp_demand-=sub_throughput
+            tmp_gpu_num-=1  #undo 后续需要改为实际使用gpu数量
             max_mul-=sub_throughput*sub_acc
+            
+        #sum(cnt)可能并不等于gpu_num，因为不一定所有的gpu都被使用到了，剩余的gpu全部加载最优的模型
+        record_i=-1 #找出最优模型，需要准确率最高同时满足吞吐量不为0
+        for i in range(0,model_num):
+            (t,a)=current_models[model_name[i]]
+            if(t>0):
+                if record_i==-1:
+                    record_i=i
+                elif a>current_models[model_name[record_i]][1]:
+                    record_i=i
+        cnt[record_i]+=gpu_num-sum(cnt)
 
-        #将cnt转换为required_predictors
+        #转换输出格式  将cnt转换为required_predictors
         required_predictors={}
         for i in range(model_num):
             if cnt[i]>0:  #只有非0个数的模型才需要记录下来
