@@ -159,7 +159,7 @@ class Dp(SchedulingAlgorithm):
 
     def sub_problem(self,isi,target_demand,gpu_num,all_models):  #target_demand是系统所需的请求量，经过条件判断后，demand是扩增后的需求量
         current_models=all_models[isi]
-        alpha=1.2#扩增系数
+        alpha=1.25#扩增系数
 
         #确定demand
         min_throughput=0
@@ -195,7 +195,7 @@ class Dp(SchedulingAlgorithm):
         
         #在背包计算完后进行选择最佳策略  选择record_demand  record_num
         solutions=[]  #先将所有可能的demand情况下的方案记录下来，根据准确率从大到小排序  前list_len个准确率中找吞吐量最大的
-        list_len=5
+        list_len=15
         for d in range(target_demand,demand+1):
             max_mul=0
             tmp_record_num=0
