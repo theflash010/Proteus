@@ -288,7 +288,7 @@ def main(args):
                     actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)         #用新的demand建模并计算出ilp结果，将结果应用到simulator上，action返回值一定是None
                     ilp_rounds += 1
                 elif (i == 47 or i == 59 or i == 71 or i == 83) and 'normal_load' in trace_path:
-                    actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)
+                    actions = ilp.run(observation, env.n_accelerators, env.max_no_of_accelerators)  #run函数内部已经将策略部署在simulator上了
                     ilp_rounds += 1
                 else:
                     actions = None

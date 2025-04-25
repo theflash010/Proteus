@@ -164,6 +164,6 @@ axs[2, 1].set_xticks([])
 plt.rcParams['pdf.fonttype'] = 42
 plt.rcParams['ps.fonttype'] = 42
 
-savefile = 'figures/timeseries_together.pdf'
+savefile = 'figures/endtoend.pdf'
 plt.savefig(os.path.join(savefile), dpi=500, bbox_inches='tight')
 print(f'Figure saved at {savefile}')

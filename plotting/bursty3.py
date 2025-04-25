@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 #仅绘画dp 和 proteus infass 的结果
 
-path = 'logs/throughput/endtoend'
+path = 'logs/throughput/bursty'
 
 logfile_list = [f'{path}/dp.csv', f'{path}/infaas_v2.csv',f'{path}/ilp.csv',f'{path}/clipper_lowacc.csv']
 
@@ -166,6 +166,6 @@ axs[2, 1].set_xticks([])
 plt.rcParams['pdf.fonttype'] = 42
 plt.rcParams['ps.fonttype'] = 42
 
-savefile = 'figures/endtoend2.pdf'
+savefile = 'figures/bursty3.pdf'
 plt.savefig(os.path.join(savefile), dpi=500, bbox_inches='tight')
 print(f'Figure saved at {savefile}')
